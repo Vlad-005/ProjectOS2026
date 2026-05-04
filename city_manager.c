@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <dirent.h>
 
@@ -142,6 +143,35 @@ void remove_report(const char *district, int id) {
     close(fd);
 }
 
+void remove_district(const char *district) {
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("fork");
+        return;
+    }
+
+    if (pid == 0) {
+        execlp("rm", "rm", "-rf", district, (char *)NULL);
+        perror("execlp");
+        _exit(127);
+    }
+
+    int status;
+    if (waitpid(pid, &status, 0) == -1) {
+        perror("waitpid");
+        return;
+    }
+
+    char link_path[256];
+    snprintf(link_path, sizeof(link_path), "active_reports-%s", district);
+    unlink(link_path);
+
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+        printf("District %s removed.\n", district);
+    } else {
+        printf("Failed to remove district %s.\n", district);
+    }
+}
 
 void create_snapshot(const char *dir, FILE *f) {
     DIR *d = opendir(dir);
@@ -187,7 +217,7 @@ int main(int argc, char *argv[]) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--role") == 0) role = argv[++i];
         else if (strcmp(argv[i], "--user") == 0) user = argv[++i];
-        else if (strncmp(argv[i], "--", 2) == 0) { op_idx = i; break; }
+        else if (op_idx == -1) { op_idx = i; break; }
     }
 
     if (!role || !user || op_idx == -1) {
@@ -209,7 +239,12 @@ int main(int argc, char *argv[]) {
         if (f) { create_snapshot(".", f); fclose(f); printf("Snapshot saved.\n"); }
     } else if (strcmp(cmd, "--update") == 0) {
         update_snapshot("snapshot.txt");
+    } else if ((strcmp(cmd, "--remove-district") == 0 || strcmp(cmd, "remove_district") == 0) && strcmp(role, "manager") == 0) {
+        remove_district(argv[op_idx + 1]);
+    } else {
+        printf("Invalid command or insufficient permissions.\n");
     }
+
 
     return 0;
 }
