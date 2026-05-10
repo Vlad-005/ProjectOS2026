@@ -1,11 +1,15 @@
-// #include <stdio.h>
-// #include <stdlib.h>
-// #include <string.h>
-// #include <unistd.h>
-// #include <fcntl.h>
-// #include <sys/stat.h>
-// #include <sys/wait.h>
-#include "city_manager.c"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <signal.h>
+#include <errno.h>
+#include <time.h>
+#include <dirent.h>
+
 
 int keep_running = 1;
 
@@ -20,7 +24,7 @@ void handle_sigusr1(int sig) {
 
 
 int main(){
-    const char *pathname = "Documents/ProjectOS/.monitor_pid";
+    const char *pathname = "./.monitor_pid";
     int fd = open(pathname, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if(fd < 0){
         perror("Failed to open file\n");
@@ -44,7 +48,7 @@ int main(){
         return 1;
     }
 
-    sa_usr1.sa_handler = SIGUSR1;
+    sa_usr1.sa_handler = handle_sigusr1;
     sigemptyset(&sa_usr1.sa_mask);
     sa_usr1.sa_flags = 0;
     if(sigaction(SIGUSR1, &sa_usr1, NULL) == -1){

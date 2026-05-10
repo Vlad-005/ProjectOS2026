@@ -5,6 +5,8 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <signal.h>
+#include <errno.h>
 #include <time.h>
 #include <dirent.h>
 
@@ -71,6 +73,57 @@ void add_district(const char *name) {
     printf("District %s initialized.\n", name);
 }
 
+int read_monitor_pid(pid_t *pid) {
+    const char *paths[] = {".monitor_pid", "./.monitor_pid"};
+    char buf[64];
+
+    for (size_t i = 0; i < sizeof(paths) / sizeof(paths[0]); i++) {
+        int fd = open(paths[i], O_RDONLY);
+        if (fd < 0) continue;
+
+        ssize_t len = read(fd, buf, sizeof(buf) - 1);
+        close(fd);
+        if (len <= 0) continue;
+
+        buf[len] = '\0';
+        *pid = (pid_t)atoi(buf);
+        if (*pid > 0) return 0;
+    }
+
+    return -1;
+}
+
+void append_log(const char *district, const char *message) {
+    char log_path[256];
+    snprintf(log_path, sizeof(log_path), "%s/logged_district", district);
+
+    int fd = open(log_path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd < 0) return;
+    dprintf(fd, "%s", message);
+    close(fd);
+}
+
+void notify_monitor_and_log(const char *district, int report_id) {
+    pid_t pid;
+    char msg[256];
+
+    if (read_monitor_pid(&pid) < 0) {
+        snprintf(msg, sizeof(msg), "[NOTICE] Report %d added, but monitor could not be informed: PID file not found or invalid.\n", report_id);
+        append_log(district, msg);
+        return;
+    }
+
+    if (kill(pid, SIGUSR1) == -1) {
+        snprintf(msg, sizeof(msg), "[NOTICE] Report %d added, but monitor could not be informed (PID %d): %s.\n",
+                 report_id, pid, strerror(errno));
+        append_log(district, msg);
+        return;
+    }
+
+    snprintf(msg, sizeof(msg), "[NOTICE] Report %d added and monitor notified via PID %d.\n", report_id, pid);
+    append_log(district, msg);
+}
+
 void add_report(const char *district, const char *user, int sev, const char *desc) {
     char path[256], link_path[256];
     sprintf(path, "%s/reports.dat", district);
@@ -90,6 +143,8 @@ void add_report(const char *district, const char *user, int sev, const char *des
     unlink(link_path);
     symlink(path, link_path);
     printf("Report added. ID: %d (Symlink: %s)\n", r.id, link_path);
+
+    notify_monitor_and_log(district, r.id);
 }
 
 void list_reports(const char *district, const char *filter_str) {
